@@ -3,9 +3,8 @@ import random
 from tqdm import tqdm, trange
 import os
 import nltk
-import pickle
-import torch
 
+import torch
 
 from fairseq.data.data_utils import collate_tokens
 from fairseq.sequence_generator import SequenceGenerator
@@ -16,6 +15,7 @@ from .bart_utils import BARTModelWrapper
 from fairseq.models.bart import hub_interface
 
 LIL_BATCH_SIZE = 1
+
 
 TextPairData = namedtuple('TextPairData', [
     'src_text', 'tgt_text', 'src_tokens', 'tgt_tokens'])
@@ -130,11 +130,10 @@ class BART:
             self._lr_scheduler.step()
 
             self._global_step += 1
-            # 所以这个loss还是一个一个来的啊。。。。
-            # if self._global_step % self._eval_steps == 0:
-            #    self.gen_log()
+            if self._global_step % self._eval_steps == 0:
+                self.gen_log()
 
-    def loss_evaluate(self):
+    def evaluate(self):
         assert 'dev' in self._dataset
         self._bart.set_mode('train')
         self._bart.eval()
@@ -162,30 +161,19 @@ class BART:
 
         return sum(loss_list) / len(loss_list)
 
-    def generate(self, src_text, beam=5, lenpen=2.0, max_len_b=140,
+    def generate(self, src_sents, beam=4, lenpen=2.0, max_len_b=140,
                  min_len=55, no_repeat_ngram_size=3):
         self._bart.set_mode('infer')
         self._bart.eval()
 
-        generator = SequenceGenerator(
-            tgt_dict=self._bart.dictionary,
-            max_len_b=max_len_b,
-            beam_size=beam,
-            len_penalty=lenpen,
-            min_len=min_len,
-            no_repeat_ngram_size=no_repeat_ngram_size)
-
-        src_tokens = self._bart.encode(
-            src_text, max_length=self._src_max_length)
-
-        outputs = generator.generate(
-            models=[self._bart.model],
-            sample={'net_input': {
-                'src_tokens': src_tokens.unsqueeze(0).to(self._device),
-                'src_lengths': torch.tensor([len(src_tokens)]).to(self._device)
-            }})
-
-        return self._bart.decode(outputs[0][0]['tokens'].cpu())
+        with torch.no_grad():
+            return self._bart.sample(
+                src_sents,
+                beam=beam,
+                lenpen=lenpen,
+                max_len_b=max_len_b,
+                min_len=min_len,
+                no_repeat_ngram_size=no_repeat_ngram_size)
 
     def gen_log(self):
         eval_loss = self.evaluate()
@@ -200,12 +188,13 @@ class BART:
 
         self._log_file.flush()
 
-    # integrate the semsim loss and maximum likelihood loss
-    def _get_seq2seq_loss(self, src_lengths, src_tokens, tgt_tokens):
+    def _get_seq2seq_loss(self, src_lengths, src_tokens,  tgt_tokens):
         logits, extra = self._bart(
             src_tokens=src_tokens,
             src_lengths=src_lengths,
             prev_output_tokens=tgt_tokens)
+
+        tgt_tokens = tgt_tokens.to(logits.device)
 
         # Shift so that tokens < n predict n
         shift_logits = logits[:, :-1].contiguous()

@@ -7,8 +7,8 @@ BATCH_SIZE = 32
 LR = 3e-5
 ADAM_EPSILON = 1e-8
 WEIGHT_DECAY = 0.
-WARMUP_PROPORTION = 0.1
-PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__))  # 获取项目根目录
+WARMUP_STEPS = 500
+PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__)) 
 
 
 def load_data(split):
@@ -18,10 +18,10 @@ def load_data(split):
     for src, tgt in zip(src_file.readlines(), tgt_file.readlines()):
         src_texts.append(src.strip())
         tgt_texts.append(tgt.strip())
-    return src_texts, tgt_texts
+    return src_texts[:200000], tgt_texts[:200000]
 
 
-def main(n_epochs=6, src_max_length=1024, tgt_max_length=1024):
+def main(n_epochs=1, src_max_length=1024, tgt_max_length=1024):
     model = SemsimModel(
         device="cuda",
         src_max_length=src_max_length,
@@ -40,16 +40,22 @@ def main(n_epochs=6, src_max_length=1024, tgt_max_length=1024):
     print("Finished loading data.")
 
     train_steps = n_epochs * (len(model.train_dataset) // BATCH_SIZE + 1)
-    warmup_steps = int(train_steps * WARMUP_PROPORTION)
+    # warmup_steps = int(train_steps * WARMUP_PROPORTION)
     model.get_optimizer(
         lr=LR,
         train_steps=train_steps,
-        warmup_steps=warmup_steps,
+        warmup_steps=WARMUP_STEPS,
         weight_decay=WEIGHT_DECAY,
         adam_epsilon=ADAM_EPSILON)
 
     model.create_training_log(
         eval_steps=len(model.train_dataset) // BATCH_SIZE, label='bart')
+
+    for epoch in range(n_epochs):
+        model.train_epoch(batch_size=BATCH_SIZE)
+        model.save_bart(f'bart_epoch{epoch}.pth')
+    exit()
+
 
     rouge_best = 0
     for epoch in range(n_epochs):
@@ -88,3 +94,4 @@ def main(n_epochs=6, src_max_length=1024, tgt_max_length=1024):
 
 if __name__ == '__main__':
     fire.Fire(main)
+

@@ -22,20 +22,34 @@ class BARTModelWrapper(nn.Module):
         if self._mode == mode:
             return
 
+        # self.to('cpu')
+        # torch.cuda.empty_cache()
         if mode == 'train' and self._device == 'cuda' and \
                 torch.cuda.device_count() >= 2:
             self._device_encoder = 'cuda:0'
             self._device_decoder = 'cuda:1'
-        else:
-            self._device_encoder = self._device_decoder = self._device
+            self.decoder.to(self._device_decoder)
+            self.encoder.to(self._device_encoder)
 
-        self.decoder.to(self._device_decoder)
-        self.encoder.to(self._device_encoder)
+            # self.cuda()
+        #elif self._device == 'cuda':
+        #    self.cuda()
+        else:
+            if torch.cuda.device_count() >= 2:
+                self._device_encoder = self._device_decoder = 'cuda'
+                self.cuda()
+            else:
+                self._device_encoder = self._device_decoder = 'cuda'
+                self.cuda()
+
+        #self.decoder.to(self._device_decoder)
+        #self.encoder.to(self._device_encoder)
         torch.cuda.empty_cache()
 
         if mode == 'train':
             self.train()
         else:
+            # self.cuda(1)
             self.eval()
 
         self._mode = mode
@@ -73,15 +87,9 @@ class BARTModelWrapper(nn.Module):
 
         return torch.tensor(tokens).long()
 
-    # @property
-    # def sample(self):
-        # return self._interface.sample
-
-    def sample(self, sentences, beam, verbose=False, **kwargs):
-        input = [self._interface.encode(sentence).tolist() for sentence in sentences]
-        input = torch.tensor(input).to(self._device)
-        hypos = self._interface.generate(input, beam, verbose, **kwargs)
-        return [self._interface.decode(x['tokens']) for x in hypos]
+    @property
+    def sample(self):
+        return self._interface.sample
 
     @property
     def decode(self):
